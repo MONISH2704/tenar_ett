@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+
 import { getSession } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/authorization";
-import { users } from "@/lib/data/users";
+import {
+  getAllUsers,
+  getUserByEmail,
+  createUser,
+} from "@/lib/data/cosmos-users";
+
+export const runtime = "nodejs";
 
 export async function GET() {
   const session = await getSession();
@@ -17,16 +25,10 @@ export async function GET() {
     );
   }
 
-  if (
-    !hasPermission(
-      session.role,
-      "MANAGE_MANAGERS"
-    )
-  ) {
+  if (!hasPermission(session.role, "MANAGE_MANAGERS")) {
     return NextResponse.json(
       {
-        error:
-          "You do not have permission to manage managers.",
+        error: "You do not have permission to manage managers.",
       },
       {
         status: 403,
@@ -34,13 +36,36 @@ export async function GET() {
     );
   }
 
-  const managers = users.filter(
-    (user) => user.role === "MANAGER"
-  );
+  try {
+    const allUsers = await getAllUsers();
 
-  return NextResponse.json({
-    users: managers,
-  });
+    const managers = allUsers
+      .filter((user) => user.role === "MANAGER")
+      .map((user) => ({
+        id: user.userId,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        status: user.status,
+        joinedDate: user.joinedDate,
+      }));
+
+    return NextResponse.json({
+      users: managers,
+    });
+  } catch (error) {
+    console.error("Failed to fetch managers:", error);
+
+    return NextResponse.json(
+      {
+        error: "Unable to fetch managers.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -57,16 +82,10 @@ export async function POST(request: Request) {
     );
   }
 
-  if (
-    !hasPermission(
-      session.role,
-      "MANAGE_MANAGERS"
-    )
-  ) {
+  if (!hasPermission(session.role, "MANAGE_MANAGERS")) {
     return NextResponse.json(
       {
-        error:
-          "You do not have permission to create managers.",
+        error: "You do not have permission to create managers.",
       },
       {
         status: 403,
@@ -92,11 +111,16 @@ export async function POST(request: Request) {
         ? body.department.trim()
         : "";
 
-    if (!name || !email || !department) {
+    const password =
+      typeof body.password === "string"
+        ? body.password
+        : "";
+
+    if (!name || !email || !department || !password) {
       return NextResponse.json(
         {
           error:
-            "Name, email and department are required.",
+            "Name, email, department and password are required.",
         },
         {
           status: 400,
@@ -104,10 +128,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingUser = users.find(
-      (user) =>
-        user.email.toLowerCase() === email
-    );
+    if (password.length < 8) {
+      return NextResponse.json(
+        {
+          error:
+            "Password must be at least 8 characters long.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const existingUser = await getUserByEmail(email);
 
     if (existingUser) {
       return NextResponse.json(
@@ -121,13 +154,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const newManager = {
-      id: `manager-${Date.now()}`,
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const userId = `manager-${crypto.randomUUID()}`;
+
+    const newManager = await createUser({
+      userId,
       name,
       email,
-      role: "MANAGER" as const,
+      role: "MANAGER",
       department,
-      status: "Active" as const,
+      status: "Active",
       joinedDate: new Date().toLocaleDateString(
         "en-GB",
         {
@@ -136,28 +173,36 @@ export async function POST(request: Request) {
           year: "numeric",
         }
       ),
-      password: "Temporary@12345",
-    };
-
-    users.push(newManager);
+      passwordHash,
+    });
 
     return NextResponse.json(
       {
         success: true,
         message: "Manager created successfully.",
-        user: newManager,
+        user: {
+          id: newManager.userId,
+          name: newManager.name,
+          email: newManager.email,
+          role: newManager.role,
+          department: newManager.department,
+          status: newManager.status,
+          joinedDate: newManager.joinedDate,
+        },
       },
       {
         status: 201,
       }
     );
-  } catch {
+  } catch (error) {
+    console.error("Failed to create manager:", error);
+
     return NextResponse.json(
       {
-        error: "Invalid request.",
+        error: "Unable to create manager.",
       },
       {
-        status: 400,
+        status: 500,
       }
     );
   }

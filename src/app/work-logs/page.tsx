@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import {
   CalendarDays,
@@ -15,7 +15,7 @@ import {
 type SessionType = "Work" | "Break";
 
 interface WorkLog {
-  id: number;
+  id: string;
   date: string;
   dateValue: string;
   day: string;
@@ -25,136 +25,50 @@ interface WorkLog {
   duration: string;
 }
 
-const workLogs: WorkLog[] = [
-  {
-    id: 1,
-    date: "30 Aug 2026",
-    dateValue: "2026-08-30",
-    day: "Sunday",
-    type: "Work",
-    startTime: "09:05 AM",
-    endTime: "12:30 PM",
-    duration: "03h 25m",
-  },
-  {
-    id: 2,
-    date: "30 Aug 2026",
-    dateValue: "2026-08-30",
-    day: "Sunday",
-    type: "Break",
-    startTime: "12:30 PM",
-    endTime: "01:15 PM",
-    duration: "00h 45m",
-  },
-  {
-    id: 3,
-    date: "30 Aug 2026",
-    dateValue: "2026-08-30",
-    day: "Sunday",
-    type: "Work",
-    startTime: "01:15 PM",
-    endTime: "06:10 PM",
-    duration: "04h 55m",
-  },
-  {
-    id: 4,
-    date: "29 Aug 2026",
-    dateValue: "2026-08-29",
-    day: "Saturday",
-    type: "Work",
-    startTime: "09:02 AM",
-    endTime: "12:45 PM",
-    duration: "03h 43m",
-  },
-  {
-    id: 5,
-    date: "29 Aug 2026",
-    dateValue: "2026-08-29",
-    day: "Saturday",
-    type: "Break",
-    startTime: "12:45 PM",
-    endTime: "01:30 PM",
-    duration: "00h 45m",
-  },
-  {
-    id: 6,
-    date: "29 Aug 2026",
-    dateValue: "2026-08-29",
-    day: "Saturday",
-    type: "Work",
-    startTime: "01:30 PM",
-    endTime: "06:05 PM",
-    duration: "04h 35m",
-  },
-  {
-    id: 7,
-    date: "28 Aug 2026",
-    dateValue: "2026-08-28",
-    day: "Friday",
-    type: "Work",
-    startTime: "09:15 AM",
-    endTime: "12:30 PM",
-    duration: "03h 15m",
-  },
-  {
-    id: 8,
-    date: "28 Aug 2026",
-    dateValue: "2026-08-28",
-    day: "Friday",
-    type: "Break",
-    startTime: "12:30 PM",
-    endTime: "01:20 PM",
-    duration: "00h 50m",
-  },
-  {
-    id: 9,
-    date: "28 Aug 2026",
-    dateValue: "2026-08-28",
-    day: "Friday",
-    type: "Work",
-    startTime: "01:20 PM",
-    endTime: "06:00 PM",
-    duration: "04h 40m",
-  },
-  {
-    id: 10,
-    date: "27 Aug 2026",
-    dateValue: "2026-08-27",
-    day: "Thursday",
-    type: "Work",
-    startTime: "09:00 AM",
-    endTime: "01:00 PM",
-    duration: "04h 00m",
-  },
-  {
-    id: 11,
-    date: "27 Aug 2026",
-    dateValue: "2026-08-27",
-    day: "Thursday",
-    type: "Break",
-    startTime: "01:00 PM",
-    endTime: "01:30 PM",
-    duration: "00h 30m",
-  },
-  {
-    id: 12,
-    date: "27 Aug 2026",
-    dateValue: "2026-08-27",
-    day: "Thursday",
-    type: "Work",
-    startTime: "01:30 PM",
-    endTime: "06:02 PM",
-    duration: "04h 32m",
-  },
-];
-
 export default function WorkLogsPage() {
+  const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   const [sessionFilter, setSessionFilter] =
     useState<"All" | SessionType>("All");
 
   const [searchTerm, setSearchTerm] = useState("");
 
   const [selectedDate, setSelectedDate] = useState("");
+
+  useEffect(() => {
+    const fetchWorkLogs = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await fetch("/api/work-logs");
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Unable to fetch work logs."
+          );
+        }
+
+        setWorkLogs(data.workLogs ?? []);
+      } catch (error) {
+        console.error("Failed to fetch work logs:", error);
+
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Unable to fetch work logs."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWorkLogs();
+  }, []);
 
   const filteredLogs = useMemo(() => {
     return workLogs.filter((log) => {
@@ -179,7 +93,12 @@ export default function WorkLogsPage() {
         matchesDate
       );
     });
-  }, [sessionFilter, searchTerm, selectedDate]);
+  }, [
+    workLogs,
+    sessionFilter,
+    searchTerm,
+    selectedDate,
+  ]);
 
   const workSessions = workLogs.filter(
     (log) => log.type === "Work"
@@ -188,6 +107,49 @@ export default function WorkLogsPage() {
   const breakSessions = workLogs.filter(
     (log) => log.type === "Break"
   ).length;
+
+  const todayDate = new Date()
+    .toLocaleDateString("en-CA", {
+      timeZone: "Asia/Kolkata",
+    });
+
+  const todayWorkingMinutes = workLogs
+    .filter(
+      (log) =>
+        log.dateValue === todayDate &&
+        log.type === "Work"
+    )
+    .reduce((total, log) => {
+      const match = log.duration.match(
+        /(\d+)h\s*(\d+)m/
+      );
+
+      if (!match) {
+        return total;
+      }
+
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+
+      return total + hours * 60 + minutes;
+    }, 0);
+
+  const todayWorkingHours = Math.floor(
+    todayWorkingMinutes / 60
+  );
+
+  const todayWorkingRemainingMinutes =
+    todayWorkingMinutes % 60;
+
+  const todayWorking =
+    todayWorkingMinutes > 0
+      ? `${String(todayWorkingHours).padStart(
+          2,
+          "0"
+        )}h ${String(
+          todayWorkingRemainingMinutes
+        ).padStart(2, "0")}m`
+      : "00h 00m";
 
   const handleDateChange = (
     event: React.ChangeEvent<HTMLInputElement>
@@ -243,7 +205,7 @@ export default function WorkLogsPage() {
           <SummaryCard
             icon={<Timer className="h-5 w-5" />}
             title="Today's Working"
-            value="08h 20m"
+            value={todayWorking}
             description="Total active work time"
             type="green"
           />
@@ -367,172 +329,208 @@ export default function WorkLogsPage() {
 
           </div>
 
-          {/* Desktop Table */}
-          <div className="hidden overflow-x-auto md:block">
-
-            <table className="w-full">
-
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Date
-                  </th>
-
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Session
-                  </th>
-
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Start Time
-                  </th>
-
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    End Time
-                  </th>
-
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Duration
-                  </th>
-
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-
-                {filteredLogs.map((log) => (
-                  <tr
-                    key={log.id}
-                    className="transition hover:bg-slate-50"
-                  >
-
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-semibold text-slate-800">
-                        {log.date}
-                      </p>
-
-                      <p className="text-xs text-slate-400">
-                        {log.day}
-                      </p>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <SessionBadge type={log.type} />
-                    </td>
-
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {log.startTime}
-                    </td>
-
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {log.endTime}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <span className="text-sm font-semibold text-slate-700">
-                        {log.duration}
-                      </span>
-                    </td>
-
-                  </tr>
-                ))}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
-          {/* Mobile Cards */}
-          <div className="divide-y divide-slate-100 md:hidden">
-
-            {filteredLogs.map((log) => (
-              <div
-                key={log.id}
-                className="p-5"
-              >
-
-                <div className="flex items-start justify-between gap-4">
-
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">
-                      {log.date}
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-400">
-                      {log.day}
-                    </p>
-                  </div>
-
-                  <SessionBadge type={log.type} />
-
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-4">
-
-                  <div>
-                    <p className="text-xs text-slate-400">
-                      Start Time
-                    </p>
-
-                    <p className="mt-1 text-sm font-medium text-slate-700">
-                      {log.startTime}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-slate-400">
-                      End Time
-                    </p>
-
-                    <p className="mt-1 text-sm font-medium text-slate-700">
-                      {log.endTime}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-slate-400">
-                      Duration
-                    </p>
-
-                    <p className="mt-1 text-sm font-semibold text-slate-700">
-                      {log.duration}
-                    </p>
-                  </div>
-
-                </div>
-
-              </div>
-            ))}
-
-          </div>
-
-          {/* Empty State */}
-          {filteredLogs.length === 0 && (
+          {/* Loading State */}
+          {loading && (
             <div className="px-6 py-12 text-center">
-
-              <Clock3 className="mx-auto h-8 w-8 text-slate-300" />
+              <Clock3 className="mx-auto h-8 w-8 animate-pulse text-slate-300" />
 
               <p className="mt-3 text-sm font-medium text-slate-600">
-                No work logs found
+                Loading work logs...
+              </p>
+            </div>
+          )}
+
+          {/* Error State */}
+          {!loading && error && (
+            <div className="px-6 py-12 text-center">
+
+              <Clock3 className="mx-auto h-8 w-8 text-red-300" />
+
+              <p className="mt-3 text-sm font-medium text-red-600">
+                Unable to load work logs
               </p>
 
               <p className="mt-1 text-xs text-slate-400">
-                Try changing your search, date or session filter.
+                {error}
               </p>
 
             </div>
           )}
 
+          {/* Desktop Table */}
+          {!loading && !error && filteredLogs.length > 0 && (
+            <div className="hidden overflow-x-auto md:block">
+
+              <table className="w-full">
+
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50">
+
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Date
+                    </th>
+
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Session
+                    </th>
+
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Start Time
+                    </th>
+
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      End Time
+                    </th>
+
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Duration
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+
+                  {filteredLogs.map((log) => (
+                    <tr
+                      key={log.id}
+                      className="transition hover:bg-slate-50"
+                    >
+
+                      <td className="px-6 py-4">
+                        <p className="text-sm font-semibold text-slate-800">
+                          {log.date}
+                        </p>
+
+                        <p className="text-xs text-slate-400">
+                          {log.day}
+                        </p>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <SessionBadge type={log.type} />
+                      </td>
+
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {log.startTime}
+                      </td>
+
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {log.endTime}
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-semibold text-slate-700">
+                          {log.duration}
+                        </span>
+                      </td>
+
+                    </tr>
+                  ))}
+
+                </tbody>
+
+              </table>
+
+            </div>
+          )}
+
+          {/* Mobile Cards */}
+          {!loading && !error && filteredLogs.length > 0 && (
+            <div className="divide-y divide-slate-100 md:hidden">
+
+              {filteredLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="p-5"
+                >
+
+                  <div className="flex items-start justify-between gap-4">
+
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">
+                        {log.date}
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        {log.day}
+                      </p>
+                    </div>
+
+                    <SessionBadge type={log.type} />
+
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        Start Time
+                      </p>
+
+                      <p className="mt-1 text-sm font-medium text-slate-700">
+                        {log.startTime}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        End Time
+                      </p>
+
+                      <p className="mt-1 text-sm font-medium text-slate-700">
+                        {log.endTime}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        Duration
+                      </p>
+
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {log.duration}
+                      </p>
+                    </div>
+
+                  </div>
+
+                </div>
+              ))}
+
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loading &&
+            !error &&
+            filteredLogs.length === 0 && (
+              <div className="px-6 py-12 text-center">
+
+                <Clock3 className="mx-auto h-8 w-8 text-slate-300" />
+
+                <p className="mt-3 text-sm font-medium text-slate-600">
+                  No work logs found
+                </p>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Try changing your search, date or session filter.
+                </p>
+
+              </div>
+            )}
+
           {/* Footer */}
-          <div className="border-t border-slate-100 px-6 py-4">
+          {!loading && !error && (
+            <div className="border-t border-slate-100 px-6 py-4">
 
-            <p className="text-xs text-slate-400">
-              Showing {filteredLogs.length} of{" "}
-              {workLogs.length} sessions
-            </p>
+              <p className="text-xs text-slate-400">
+                Showing {filteredLogs.length} of{" "}
+                {workLogs.length} sessions
+              </p>
 
-          </div>
+            </div>
+          )}
 
         </div>
 

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { createSession } from "@/lib/auth/session";
-import { users } from "@/lib/data/users";
+import { getUserByEmail } from "@/lib/data/cosmos-users";
+
+export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
@@ -24,13 +26,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = users.find(
-      (currentUser) =>
-        currentUser.email.toLowerCase() === email &&
-        currentUser.status === "Active"
-    );
+    const user = await getUserByEmail(email);
 
-    if (!user) {
+    if (!user || user.status !== "Active") {
       return NextResponse.json(
         {
           message: "Invalid company email or password.",
@@ -41,26 +39,9 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * Temporary development authentication.
-     *
-     * The current users.ts contains plaintext development
-     * passwords. We hash the stored password before comparing
-     * so the login flow continues to use bcrypt.
-     *
-     * When Cosmos DB is added, users will contain password
-     * hashes directly and this section will be changed to:
-     *
-     * bcrypt.compare(password, user.passwordHash)
-     */
-    const passwordHash = await bcrypt.hash(
-      user.password,
-      10
-    );
-
     const passwordMatches = await bcrypt.compare(
       password,
-      passwordHash
+      user.passwordHash
     );
 
     if (!passwordMatches) {
@@ -75,7 +56,7 @@ export async function POST(request: Request) {
     }
 
     await createSession({
-      userId: user.id,
+      userId: user.userId,
       email: user.email,
       role: user.role,
       name: user.name,
@@ -84,13 +65,15 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       user: {
-        userId: user.id,
+        userId: user.userId,
         name: user.name,
         email: user.email,
         role: user.role,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Login failed:", error);
+
     return NextResponse.json(
       {
         message: "Unable to process login.",

@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+
 import { getSession } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/authorization";
-import { users } from "@/lib/data/users";
+import {
+  getUserById,
+  updateUser,
+} from "@/lib/data/cosmos-users";
 
 interface RouteContext {
   params: Promise<{
     id: string;
   }>;
 }
+
+export const runtime = "nodejs";
 
 export async function PATCH(
   request: Request,
@@ -28,83 +35,81 @@ export async function PATCH(
 
   const { id } = await context.params;
 
-  const user = users.find(
-    (currentUser) => currentUser.id === id
-  );
-
-  if (!user) {
-    return NextResponse.json(
-      {
-        error: "User not found.",
-      },
-      {
-        status: 404,
-      }
-    );
-  }
-
-  /*
-   * ADMIN:
-   * Can change employee and manager passwords.
-   *
-   * MANAGER:
-   * Can change employee passwords only.
-   *
-   * EMPLOYEE:
-   * Cannot change other users' passwords.
-   */
-
-  if (user.role === "EMPLOYEE") {
-    if (
-      !hasPermission(
-        session.role,
-        "CHANGE_EMPLOYEE_PASSWORD"
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "You do not have permission to change employee passwords.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-  }
-
-  if (user.role === "MANAGER") {
-    if (
-      !hasPermission(
-        session.role,
-        "CHANGE_MANAGER_PASSWORD"
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "You do not have permission to change manager passwords.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-  }
-
-  if (user.role === "ADMIN") {
-    return NextResponse.json(
-      {
-        error:
-          "Administrator passwords cannot be changed through this endpoint.",
-      },
-      {
-        status: 403,
-      }
-    );
-  }
-
   try {
+    const user = await getUserById(id);
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          error: "User not found.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    /*
+     * ADMIN:
+     * Can change employee and manager passwords.
+     *
+     * MANAGER:
+     * Can change employee passwords only.
+     *
+     * EMPLOYEE:
+     * Cannot change other users' passwords.
+     */
+
+    if (user.role === "EMPLOYEE") {
+      if (
+        !hasPermission(
+          session.role,
+          "CHANGE_EMPLOYEE_PASSWORD"
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "You do not have permission to change employee passwords.",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+    }
+
+    if (user.role === "MANAGER") {
+      if (
+        !hasPermission(
+          session.role,
+          "CHANGE_MANAGER_PASSWORD"
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "You do not have permission to change manager passwords.",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+    }
+
+    if (user.role === "ADMIN") {
+      return NextResponse.json(
+        {
+          error:
+            "Administrator passwords cannot be changed through this endpoint.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
     const body = await request.json();
 
     const newPassword =
@@ -135,20 +140,32 @@ export async function PATCH(
       );
     }
 
-    user.password = newPassword;
+    const passwordHash = await bcrypt.hash(
+      newPassword,
+      10
+    );
+
+    await updateUser(id, {
+      passwordHash,
+    });
 
     return NextResponse.json({
       success: true,
       message:
         `${user.role === "MANAGER" ? "Manager" : "Employee"} password updated successfully.`,
     });
-  } catch {
+  } catch (error) {
+    console.error(
+      "Failed to update user password:",
+      error
+    );
+
     return NextResponse.json(
       {
-        error: "Invalid request.",
+        error: "Unable to update password.",
       },
       {
-        status: 400,
+        status: 500,
       }
     );
   }

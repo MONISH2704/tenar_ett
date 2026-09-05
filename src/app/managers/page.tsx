@@ -37,10 +37,11 @@ export default function ManagersPage() {
     useState<Manager | null>(null);
 
   const [newManager, setNewManager] = useState({
-    name: "",
-    email: "",
-    department: "",
-  });
+  name: "",
+  email: "",
+  department: "",
+  password: "",
+});
 
   const [newPassword, setNewPassword] = useState("");
 
@@ -119,10 +120,11 @@ export default function ManagersPage() {
       setMessage("Manager created successfully.");
 
       setNewManager({
-        name: "",
-        email: "",
-        department: "",
-      });
+  name: "",
+  email: "",
+  department: "",
+  password: "",
+});
 
       setShowAddModal(false);
 
@@ -482,6 +484,30 @@ export default function ManagersPage() {
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
+              <div>
+  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+    Password
+  </label>
+
+  <input
+    required
+    minLength={8}
+    type="password"
+    value={newManager.password}
+    onChange={(event) =>
+      setNewManager({
+        ...newManager,
+        password: event.target.value,
+      })
+    }
+    placeholder="Enter manager password"
+    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+  />
+
+  <p className="mt-1.5 text-xs text-slate-400">
+    Minimum 8 characters.
+  </p>
+</div>
                 <button
                   type="button"
                   onClick={() =>

@@ -37,10 +37,11 @@ export default function EmployeesPage() {
     useState<Employee | null>(null);
 
   const [newEmployee, setNewEmployee] = useState({
-    name: "",
-    email: "",
-    department: "",
-  });
+  name: "",
+  email: "",
+  department: "",
+  password: "",
+});
 
   const [newPassword, setNewPassword] = useState("");
 
@@ -124,10 +125,11 @@ export default function EmployeesPage() {
       setMessage("Employee created successfully.");
 
       setNewEmployee({
-        name: "",
-        email: "",
-        department: "",
-      });
+  name: "",
+  email: "",
+  department: "",
+  password: "",
+});
 
       setShowAddModal(false);
 
@@ -269,6 +271,35 @@ export default function EmployeesPage() {
               />
             </div>
           </div>
+
+
+          <div>
+  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+    Password
+  </label>
+
+  <input
+    required
+    minLength={8}
+    type="password"
+    value={newEmployee.password}
+    onChange={(event) =>
+      setNewEmployee({
+        ...newEmployee,
+        password: event.target.value,
+      })
+    }
+    placeholder="Enter employee password"
+    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+  />
+
+  <p className="mt-1.5 text-xs text-slate-400">
+    Minimum 8 characters.
+  </p>
+</div>
+
+
+
 
           {/* Employee Count */}
           <div className="flex items-center gap-2 px-4 py-4 sm:px-6">

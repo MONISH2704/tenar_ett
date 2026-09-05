@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import {
   CalendarDays,
@@ -19,6 +19,8 @@ type AttendanceStatus =
   | "Leave";
 
 interface AttendanceRecord {
+  id: string;
+  userId: string;
   date: string;
   day: string;
   clockIn: string;
@@ -28,86 +30,95 @@ interface AttendanceRecord {
   status: AttendanceStatus;
 }
 
-const attendanceData: AttendanceRecord[] = [
-  {
-    date: "30 Aug 2026",
-    day: "Sunday",
-    clockIn: "09:05 AM",
-    clockOut: "06:10 PM",
-    workingHours: "08h 20m",
-    breakHours: "00h 45m",
-    status: "Present",
-  },
-  {
-    date: "29 Aug 2026",
-    day: "Saturday",
-    clockIn: "09:02 AM",
-    clockOut: "06:05 PM",
-    workingHours: "08h 18m",
-    breakHours: "00h 45m",
-    status: "Present",
-  },
-  {
-    date: "28 Aug 2026",
-    day: "Friday",
-    clockIn: "09:15 AM",
-    clockOut: "06:00 PM",
-    workingHours: "07h 55m",
-    breakHours: "00h 50m",
-    status: "Late",
-  },
-  {
-    date: "27 Aug 2026",
-    day: "Thursday",
-    clockIn: "09:00 AM",
-    clockOut: "06:02 PM",
-    workingHours: "08h 32m",
-    breakHours: "00h 30m",
-    status: "Present",
-  },
-  {
-    date: "26 Aug 2026",
-    day: "Wednesday",
-    clockIn: "09:08 AM",
-    clockOut: "06:12 PM",
-    workingHours: "08h 24m",
-    breakHours: "00h 40m",
-    status: "Present",
-  },
-  {
-    date: "25 Aug 2026",
-    day: "Tuesday",
-    clockIn: "09:00 AM",
-    clockOut: "06:00 PM",
-    workingHours: "08h 30m",
-    breakHours: "00h 30m",
-    status: "Present",
-  },
-  {
-    date: "24 Aug 2026",
-    day: "Monday",
-    clockIn: "09:25 AM",
-    clockOut: "06:15 PM",
-    workingHours: "07h 50m",
-    breakHours: "01h 00m",
-    status: "Late",
-  },
-  {
-    date: "23 Aug 2026",
-    day: "Sunday",
-    clockIn: "--",
-    clockOut: "--",
-    workingHours: "--",
-    breakHours: "--",
-    status: "Leave",
-  },
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 export default function AttendancePage() {
-  const [currentMonth, setCurrentMonth] = useState(
-    "August 2026"
-  );
+  const [currentMonth, setCurrentMonth] =
+    useState("August 2026");
 
+  const [attendanceData, setAttendanceData] = useState<
+    AttendanceRecord[]
+  >([]);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  /*
+   * Convert "August 2026" into:
+   * month = 8
+   * year = 2026
+   */
+  const getMonthAndYear = () => {
+    const [monthName, yearString] = currentMonth.split(" ");
+
+    const monthIndex = MONTHS.indexOf(monthName);
+
+    return {
+      month: monthIndex + 1,
+      year: Number(yearString),
+    };
+  };
+
+  /*
+   * Load attendance whenever the selected month changes.
+   */
+  useEffect(() => {
+    const loadAttendance = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const { month, year } = getMonthAndYear();
+
+        const response = await fetch(
+          `/api/attendance?month=${month}&year=${year}`,
+          {
+            cache: "no-store",
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Unable to load attendance."
+          );
+        }
+
+        setAttendanceData(data.attendance ?? []);
+      } catch (err) {
+        setAttendanceData([]);
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load attendance."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAttendance();
+  }, [currentMonth]);
+
+  /*
+   * Summary calculations are based only on
+   * the currently selected month.
+   */
   const presentDays = attendanceData.filter(
     (record) => record.status === "Present"
   ).length;
@@ -119,6 +130,56 @@ export default function AttendancePage() {
   const leaveDays = attendanceData.filter(
     (record) => record.status === "Leave"
   ).length;
+
+  const averageMinutes =
+    calculateAverageWorkingMinutes(attendanceData);
+
+  const averageHours =
+    averageMinutes > 0
+      ? formatDuration(averageMinutes)
+      : "00h 00m";
+
+  /*
+   * Previous month.
+   */
+  const handlePreviousMonth = () => {
+    const { month, year } = getMonthAndYear();
+
+    const previousDate = new Date(
+      year,
+      month - 2,
+      1
+    );
+
+    setCurrentMonth(
+      `${MONTHS[previousDate.getMonth()]} ${previousDate.getFullYear()}`
+    );
+  };
+
+  /*
+   * Next month.
+   */
+  const handleNextMonth = () => {
+    const { month, year } = getMonthAndYear();
+
+    const nextDate = new Date(
+      year,
+      month,
+      1
+    );
+
+    setCurrentMonth(
+      `${MONTHS[nextDate.getMonth()]} ${nextDate.getFullYear()}`
+    );
+  };
+
+  /*
+   * For the current TENAR test data,
+   * August 2026 is the current application month.
+   */
+  const handleCurrentMonth = () => {
+    setCurrentMonth("August 2026");
+  };
 
   return (
     <AppLayout>
@@ -138,6 +199,13 @@ export default function AttendancePage() {
             View your attendance history and working hours.
           </p>
         </div>
+
+        {/* Error */}
+        {error && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            {error}
+          </div>
+        )}
 
         {/* Month Selector */}
         <div className="mb-6 flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
@@ -159,40 +227,46 @@ export default function AttendancePage() {
           </div>
 
           <div className="flex items-center gap-2">
+
+            {/* Previous Month */}
             <button
               type="button"
-              onClick={() => setCurrentMonth("July 2026")}
+              onClick={handlePreviousMonth}
               className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-[#0B63F6]"
               aria-label="Previous month"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
 
+            {/* Current Month */}
             <button
               type="button"
-              onClick={() => setCurrentMonth("August 2026")}
+              onClick={handleCurrentMonth}
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
             >
               Current Month
             </button>
 
+            {/* Next Month */}
             <button
               type="button"
-              onClick={() => setCurrentMonth("September 2026")}
+              onClick={handleNextMonth}
               className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-[#0B63F6]"
               aria-label="Next month"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
-          </div>
 
+          </div>
         </div>
 
         {/* Summary Cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
           <AttendanceSummaryCard
-            icon={<CheckCircle2 className="h-5 w-5" />}
+            icon={
+              <CheckCircle2 className="h-5 w-5" />
+            }
             title="Present Days"
             value={presentDays.toString()}
             description="Days attended"
@@ -200,7 +274,9 @@ export default function AttendancePage() {
           />
 
           <AttendanceSummaryCard
-            icon={<AlertCircle className="h-5 w-5" />}
+            icon={
+              <AlertCircle className="h-5 w-5" />
+            }
             title="Late Arrivals"
             value={lateDays.toString()}
             description="Late check-ins"
@@ -208,7 +284,9 @@ export default function AttendancePage() {
           />
 
           <AttendanceSummaryCard
-            icon={<XCircle className="h-5 w-5" />}
+            icon={
+              <XCircle className="h-5 w-5" />
+            }
             title="Leave Days"
             value={leaveDays.toString()}
             description="Approved leave"
@@ -216,9 +294,11 @@ export default function AttendancePage() {
           />
 
           <AttendanceSummaryCard
-            icon={<Clock3 className="h-5 w-5" />}
+            icon={
+              <Clock3 className="h-5 w-5" />
+            }
             title="Avg. Hours"
-            value="08h 15m"
+            value={averageHours}
             description="Average per day"
             iconStyle="blue"
           />
@@ -241,162 +321,240 @@ export default function AttendancePage() {
             </div>
           </div>
 
-          {/* Desktop Table */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Date
-                  </th>
+          {/* Loading */}
+          {loading ? (
+            <div className="px-6 py-12 text-center text-sm text-slate-500">
+              Loading attendance...
+            </div>
+          ) : attendanceData.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <CalendarDays className="mx-auto h-8 w-8 text-slate-300" />
 
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Clock In
-                  </th>
+              <p className="mt-3 text-sm font-medium text-slate-600">
+                No attendance records found
+              </p>
 
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Clock Out
-                  </th>
+              <p className="mt-1 text-xs text-slate-400">
+                Your attendance records will appear here.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50">
 
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Working
-                  </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Date
+                      </th>
 
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Break
-                  </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Clock In
+                      </th>
 
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Status
-                  </th>
-                </tr>
-              </thead>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Clock Out
+                      </th>
 
-              <tbody className="divide-y divide-slate-100">
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Working
+                      </th>
+
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Break
+                      </th>
+
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Status
+                      </th>
+
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {attendanceData.map((record) => (
+                      <tr
+                        key={record.id}
+                        className="transition hover:bg-slate-50"
+                      >
+
+                        <td className="px-6 py-4">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">
+                              {record.date}
+                            </p>
+
+                            <p className="text-xs text-slate-400">
+                              {record.day}
+                            </p>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {record.clockIn}
+                        </td>
+
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {record.clockOut}
+                        </td>
+
+                        <td className="px-6 py-4 text-sm font-medium text-slate-700">
+                          {record.workingHours}
+                        </td>
+
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {record.breakHours}
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <StatusBadge
+                            status={record.status}
+                          />
+                        </td>
+
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Cards */}
+              <div className="divide-y divide-slate-100 md:hidden">
                 {attendanceData.map((record) => (
-                  <tr
-                    key={record.date}
-                    className="transition hover:bg-slate-50"
+                  <div
+                    key={record.id}
+                    className="p-5"
                   >
-                    <td className="px-6 py-4">
+
+                    <div className="flex items-start justify-between gap-4">
+
                       <div>
                         <p className="text-sm font-semibold text-slate-800">
                           {record.date}
                         </p>
 
-                        <p className="text-xs text-slate-400">
+                        <p className="mt-1 text-xs text-slate-400">
                           {record.day}
                         </p>
                       </div>
-                    </td>
 
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {record.clockIn}
-                    </td>
+                      <StatusBadge
+                        status={record.status}
+                      />
 
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {record.clockOut}
-                    </td>
+                    </div>
 
-                    <td className="px-6 py-4 text-sm font-medium text-slate-700">
-                      {record.workingHours}
-                    </td>
+                    <div className="mt-4 grid grid-cols-2 gap-4">
 
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {record.breakHours}
-                    </td>
+                      <div>
+                        <p className="text-xs text-slate-400">
+                          Clock In
+                        </p>
 
-                    <td className="px-6 py-4">
-                      <StatusBadge status={record.status} />
-                    </td>
-                  </tr>
+                        <p className="mt-1 text-sm font-medium text-slate-700">
+                          {record.clockIn}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400">
+                          Clock Out
+                        </p>
+
+                        <p className="mt-1 text-sm font-medium text-slate-700">
+                          {record.clockOut}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400">
+                          Working Hours
+                        </p>
+
+                        <p className="mt-1 text-sm font-medium text-slate-700">
+                          {record.workingHours}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400">
+                          Break Hours
+                        </p>
+
+                        <p className="mt-1 text-sm font-medium text-slate-700">
+                          {record.breakHours}
+                        </p>
+                      </div>
+
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile Cards */}
-          <div className="divide-y divide-slate-100 md:hidden">
-            {attendanceData.map((record) => (
-              <div
-                key={record.date}
-                className="p-5"
-              >
-                <div className="flex items-start justify-between gap-4">
-
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">
-                      {record.date}
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-400">
-                      {record.day}
-                    </p>
-                  </div>
-
-                  <StatusBadge status={record.status} />
-
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-4">
-
-                  <div>
-                    <p className="text-xs text-slate-400">
-                      Clock In
-                    </p>
-
-                    <p className="mt-1 text-sm font-medium text-slate-700">
-                      {record.clockIn}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-slate-400">
-                      Clock Out
-                    </p>
-
-                    <p className="mt-1 text-sm font-medium text-slate-700">
-                      {record.clockOut}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-slate-400">
-                      Working Hours
-                    </p>
-
-                    <p className="mt-1 text-sm font-medium text-slate-700">
-                      {record.workingHours}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-slate-400">
-                      Break Hours
-                    </p>
-
-                    <p className="mt-1 text-sm font-medium text-slate-700">
-                      {record.breakHours}
-                    </p>
-                  </div>
-
-                </div>
               </div>
-            ))}
-          </div>
 
-          {/* Footer */}
-          <div className="border-t border-slate-100 px-6 py-4">
-            <p className="text-xs text-slate-400">
-              Showing {attendanceData.length} attendance records
-            </p>
-          </div>
+              {/* Footer */}
+              <div className="border-t border-slate-100 px-6 py-4">
+                <p className="text-xs text-slate-400">
+                  Showing {attendanceData.length} attendance records
+                </p>
+              </div>
+            </>
+          )}
 
         </div>
 
       </div>
     </AppLayout>
   );
+}
+
+function calculateAverageWorkingMinutes(
+  records: AttendanceRecord[]
+): number {
+  const validRecords = records.filter(
+    (record) =>
+      record.workingHours !== "--" &&
+      record.status !== "Leave"
+  );
+
+  if (validRecords.length === 0) {
+    return 0;
+  }
+
+  const totalMinutes = validRecords.reduce(
+    (total, record) =>
+      total + parseDuration(record.workingHours),
+    0
+  );
+
+  return Math.round(
+    totalMinutes / validRecords.length
+  );
+}
+
+function parseDuration(value: string): number {
+  const match = value.match(
+    /(\d+)\s*h\s*(\d+)\s*m/i
+  );
+
+  if (!match) {
+    return 0;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  return hours * 60 + minutes;
+}
+
+function formatDuration(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${String(hours).padStart(2, "0")}h ${String(
+    minutes
+  ).padStart(2, "0")}m`;
 }
 
 function AttendanceSummaryCard({

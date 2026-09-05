@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+
 import { getSession } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/authorization";
+
+import {
+  getAllUsers,
+  getUserByEmail,
+  createUser,
+} from "@/lib/data/cosmos-users";
 
 type UserRole = "ADMIN" | "MANAGER" | "EMPLOYEE";
 
@@ -13,41 +21,6 @@ interface User {
   status: "Active" | "Inactive";
   joinedDate: string;
 }
-
-/*
- * Temporary user store.
- *
- * Cosmos DB will replace this later.
- */
-const users: User[] = [
-  {
-    id: "employee-001",
-    name: "John Doe",
-    email: "employee@tenar.com",
-    role: "EMPLOYEE",
-    department: "Engineering",
-    status: "Active",
-    joinedDate: "15 Jan 2026",
-  },
-  {
-    id: "employee-002",
-    name: "Jane Smith",
-    email: "jane@tenar.com",
-    role: "EMPLOYEE",
-    department: "Human Resources",
-    status: "Active",
-    joinedDate: "02 Feb 2026",
-  },
-  {
-    id: "employee-003",
-    name: "Robert Kumar",
-    email: "robert@tenar.com",
-    role: "EMPLOYEE",
-    department: "Finance",
-    status: "Active",
-    joinedDate: "18 Mar 2026",
-  },
-];
 
 export async function GET() {
   const session = await getSession();
@@ -71,7 +44,8 @@ export async function GET() {
   if (!allowed) {
     return NextResponse.json(
       {
-        error: "You do not have permission to manage employees.",
+        error:
+          "You do not have permission to manage employees.",
       },
       {
         status: 403,
@@ -79,13 +53,39 @@ export async function GET() {
     );
   }
 
-  const employees = users.filter(
-    (user) => user.role === "EMPLOYEE"
-  );
+  try {
+    const allUsers = await getAllUsers();
 
-  return NextResponse.json({
-    users: employees,
-  });
+    const employees: User[] = allUsers
+      .filter((user) => user.role === "EMPLOYEE")
+      .map((user) => ({
+        id: user.userId,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        status: user.status,
+        joinedDate: user.joinedDate,
+      }));
+
+    return NextResponse.json({
+      users: employees,
+    });
+  } catch (error) {
+    console.error(
+      "Failed to load employees from Cosmos DB:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        error: "Unable to load employees.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
 }
 
 export async function POST(
@@ -112,7 +112,8 @@ export async function POST(
   if (!allowed) {
     return NextResponse.json(
       {
-        error: "You do not have permission to manage employees.",
+        error:
+          "You do not have permission to manage employees.",
       },
       {
         status: 403,
@@ -138,11 +139,16 @@ export async function POST(
         ? body.department.trim()
         : "";
 
-    if (!name || !email || !department) {
+    const password =
+      typeof body.password === "string"
+        ? body.password
+        : "";
+
+    if (!name || !email || !department || !password) {
       return NextResponse.json(
         {
           error:
-            "Name, email and department are required.",
+            "Name, email, department and password are required.",
         },
         {
           status: 400,
@@ -150,15 +156,25 @@ export async function POST(
       );
     }
 
-    const existingUser = users.find(
-      (user) =>
-        user.email.toLowerCase() === email
-    );
+    if (password.length < 8) {
+      return NextResponse.json(
+        {
+          error:
+            "Password must be at least 8 characters.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const existingUser = await getUserByEmail(email);
 
     if (existingUser) {
       return NextResponse.json(
         {
-          error: "A user with this email already exists.",
+          error:
+            "A user with this email already exists.",
         },
         {
           status: 409,
@@ -166,41 +182,62 @@ export async function POST(
       );
     }
 
-    const newUser: User = {
-      id: `employee-${Date.now()}`,
-      name,
-      email,
-      role: "EMPLOYEE",
-      department,
-      status: "Active",
-      joinedDate: new Date().toLocaleDateString(
-        "en-GB",
-        {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }
-      ),
-    };
+    const userId = `employee-${crypto.randomUUID()}`;
 
-    users.push(newUser);
+    const passwordHash = await bcrypt.hash(
+      password,
+      10
+    );
+
+    const joinedDate = new Date().toLocaleDateString(
+      "en-GB",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
+
+    const createdUser = await createUser({
+  userId,
+  name,
+  email,
+  role: "EMPLOYEE",
+  department,
+  status: "Active",
+  joinedDate,
+  passwordHash,
+});
 
     return NextResponse.json(
       {
         message: "Employee created successfully.",
-        user: newUser,
+        user: {
+          id: createdUser.userId,
+          name: createdUser.name,
+          email: createdUser.email,
+          role: createdUser.role,
+          department: createdUser.department,
+          status: createdUser.status,
+          joinedDate: createdUser.joinedDate,
+        },
       },
       {
         status: 201,
       }
     );
-  } catch {
+  } catch (error) {
+    console.error(
+      "Failed to create employee in Cosmos DB:",
+      error
+    );
+
     return NextResponse.json(
       {
-        error: "Invalid request.",
+        error: "Unable to create employee.",
       },
       {
-        status: 400,
+        status: 500,
       }
     );
   }
