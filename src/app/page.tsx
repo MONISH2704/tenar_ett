@@ -1,17 +1,202 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 
+type DashboardStatus =
+  | "Working"
+  | "On Break"
+  | "Completed"
+  | "Not Started";
+
+type TimelineItem = {
+  time: string;
+  title: string;
+  description: string;
+  color: string;
+};
+
+type DashboardData = {
+  date: string;
+  formattedDate: string;
+  user: {
+    userId: string;
+    name: string;
+    email: string;
+    role: string;
+    department?: string;
+  };
+  today: {
+    clockIn: string | null;
+    workingSeconds: number;
+    breakSeconds: number;
+    workingTime: string;
+    breakTime: string;
+    status: DashboardStatus;
+    timeline: TimelineItem[];
+  };
+  week: {
+    workingSeconds: number;
+    breakSeconds: number;
+    overtimeSeconds: number;
+    workingTime: string;
+    breakTime: string;
+    overtime: string;
+    lateArrivals: number;
+  };
+};
+
+function formatLiveDuration(seconds: number) {
+  const safeSeconds = Math.max(0, seconds);
+
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+
+  return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(
+    2,
+    "0",
+  )}m`;
+}
+
+function getStatusColor(status: DashboardStatus) {
+  switch (status) {
+    case "Working":
+      return "bg-green-500";
+
+    case "On Break":
+      return "bg-orange-500";
+
+    case "Completed":
+      return "bg-slate-400";
+
+    default:
+      return "bg-slate-300";
+  }
+}
+
+function getStatusTextColor(status: DashboardStatus) {
+  switch (status) {
+    case "Working":
+      return "text-green-600";
+
+    case "On Break":
+      return "text-orange-600";
+
+    case "Completed":
+      return "text-slate-600";
+
+    default:
+      return "text-slate-500";
+  }
+}
+
 export default function Home() {
+  const [dashboard, setDashboard] =
+    useState<DashboardData | null>(null);
+
+  const [liveWorkingSeconds, setLiveWorkingSeconds] =
+    useState(0);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadDashboard() {
+    try {
+      const response = await fetch("/api/dashboard", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to load dashboard");
+      }
+
+      const data: DashboardData = await response.json();
+
+      setDashboard(data);
+      setLiveWorkingSeconds(data.today.workingSeconds);
+      setError("");
+    } catch (err) {
+      console.error("Dashboard load error:", err);
+      setError("Unable to load dashboard data.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadDashboard();
+
+    const refreshInterval = setInterval(() => {
+      loadDashboard();
+    }, 30000);
+
+    return () => clearInterval(refreshInterval);
+  }, []);
+
+  useEffect(() => {
+    if (!dashboard || dashboard.today.status !== "Working") {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setLiveWorkingSeconds((previous) => previous + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [dashboard]);
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="mx-auto max-w-7xl">
+          <div className="flex min-h-[400px] items-center justify-center">
+            <p className="text-sm text-slate-500">
+              Loading dashboard...
+            </p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (error || !dashboard) {
+    return (
+      <AppLayout>
+        <div className="mx-auto max-w-7xl">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+            <p className="text-sm font-medium text-red-600">
+              {error || "Unable to load dashboard."}
+            </p>
+
+            <button
+              type="button"
+              onClick={loadDashboard}
+              className="mt-4 rounded-lg bg-[#0B63F6] px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  const statusColor = getStatusColor(dashboard.today.status);
+  const statusTextColor = getStatusTextColor(
+    dashboard.today.status,
+  );
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-7xl">
         {/* Page Header */}
         <div className="mb-6">
           <p className="text-sm font-medium text-[#0B63F6]">
-            Friday, 30 August 2026
+            {dashboard.formattedDate}
           </p>
 
           <h1 className="mt-1 text-2xl font-bold text-[#102A43]">
-            Welcome back, John Doe! 👋
+            Welcome back, {dashboard.user.name}! 👋
           </h1>
 
           <p className="mt-1 text-sm text-slate-500">
@@ -23,19 +208,19 @@ export default function Home() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard
             title="Clock In"
-            value="09:05 AM"
+            value={dashboard.today.clockIn ?? "--"}
             description="Today"
           />
 
           <StatCard
             title="Total Working"
-            value="05h 20m"
+            value={formatLiveDuration(liveWorkingSeconds)}
             description="Today"
           />
 
           <StatCard
             title="Break Time"
-            value="00h 45m"
+            value={dashboard.today.breakTime}
             description="Today"
           />
 
@@ -46,15 +231,25 @@ export default function Home() {
             </p>
 
             <div className="mt-3 flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${statusColor}`}
+              />
 
-              <span className="text-lg font-semibold text-green-600">
-                Working
+              <span
+                className={`text-lg font-semibold ${statusTextColor}`}
+              >
+                {dashboard.today.status}
               </span>
             </div>
 
             <p className="mt-1 text-xs text-slate-400">
-              Active session
+              {dashboard.today.status === "Working"
+                ? "Active session"
+                : dashboard.today.status === "On Break"
+                  ? "Currently on break"
+                  : dashboard.today.status === "Completed"
+                    ? "Today's work completed"
+                    : "No active session"}
             </p>
           </div>
         </div>
@@ -67,35 +262,29 @@ export default function Home() {
               Today&apos;s Timeline
             </h2>
 
-            <div className="mt-6 space-y-5">
-              <TimelineItem
-                time="09:05 AM"
-                title="Clock In"
-                description="Started work"
-                color="bg-blue-500"
-              />
-
-              <TimelineItem
-                time="12:30 PM"
-                title="Break Start"
-                description="Lunch break"
-                color="bg-orange-500"
-              />
-
-              <TimelineItem
-                time="01:15 PM"
-                title="Break End"
-                description="Back to work"
-                color="bg-green-500"
-              />
-
-              <TimelineItem
-                time="01:15 PM - Now"
-                title="Working"
-                description="Current session"
-                color="bg-green-500"
-              />
-            </div>
+            {dashboard.today.timeline.length === 0 ? (
+              <div className="mt-6 rounded-lg border border-dashed border-slate-200 p-6 text-center">
+                <p className="text-sm text-slate-500">
+                  No work activity recorded today.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-6 space-y-5">
+                {dashboard.today.timeline.map((item, index) => (
+                  <TimelineItem
+                    key={`${item.time}-${item.title}-${index}`}
+                    time={item.time}
+                    title={item.title}
+                    description={item.description}
+                    color={item.color}
+                    isLast={
+                      index ===
+                      dashboard.today.timeline.length - 1
+                    }
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Weekly Summary */}
@@ -107,22 +296,22 @@ export default function Home() {
             <div className="mt-6 space-y-5">
               <SummaryItem
                 label="Total Working Hours"
-                value="40h 30m"
+                value={dashboard.week.workingTime}
               />
 
               <SummaryItem
                 label="Total Break Hours"
-                value="04h 15m"
+                value={dashboard.week.breakTime}
               />
 
               <SummaryItem
                 label="Overtime"
-                value="02h 30m"
+                value={dashboard.week.overtime}
               />
 
               <SummaryItem
                 label="Late Arrivals"
-                value="1"
+                value={String(dashboard.week.lateArrivals)}
               />
             </div>
           </div>
@@ -165,11 +354,13 @@ function TimelineItem({
   title,
   description,
   color,
+  isLast,
 }: {
   time: string;
   title: string;
   description: string;
   color: string;
+  isLast: boolean;
 }) {
   return (
     <div className="flex items-start gap-4">
@@ -178,7 +369,9 @@ function TimelineItem({
           className={`mt-1 h-3 w-3 rounded-full ${color}`}
         />
 
-        <span className="mt-1 h-10 w-px bg-slate-200" />
+        {!isLast && (
+          <span className="mt-1 h-10 w-px bg-slate-200" />
+        )}
       </div>
 
       <div>

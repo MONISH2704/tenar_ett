@@ -14,6 +14,13 @@ export interface CosmosUser {
   status: "Active" | "Inactive";
   joinedDate: string;
   passwordHash: string;
+
+  // Optional profile information.
+  // Existing Cosmos users can continue working without these fields.
+  phone?: string;
+  jobTitle?: string;
+  manager?: string;
+  location?: string;
 }
 
 const container = () => getCosmosContainer("users");

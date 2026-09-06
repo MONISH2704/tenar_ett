@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   Bell,
   Search,
@@ -12,9 +13,136 @@ interface TopbarProps {
   onMenuClick: () => void;
 }
 
-export default function Topbar({
-  onMenuClick,
-}: TopbarProps) {
+interface CurrentUser {
+  userId: string;
+  name: string;
+  email: string;
+  role: "ADMIN" | "MANAGER" | "EMPLOYEE";
+}
+
+export default function Topbar({ onMenuClick }: TopbarProps) {
+  const [user, setUser] = useState<CurrentUser | null>(null);
+
+  useEffect(() => {
+    const loadCurrentUser = async () => {
+      try {
+        const [authResponse, profileResponse] =
+          await Promise.all([
+            fetch("/api/auth/me", {
+              cache: "no-store",
+            }),
+            fetch("/api/profile", {
+              cache: "no-store",
+            }),
+          ]);
+
+        let currentUser: CurrentUser | null = null;
+
+        if (authResponse.ok) {
+          const authData = await authResponse.json();
+
+          if (
+            authData.authenticated &&
+            authData.user
+          ) {
+            currentUser = authData.user;
+          }
+        }
+
+        if (profileResponse.ok) {
+          const profileData =
+            await profileResponse.json();
+
+          if (
+            profileData.profile &&
+            currentUser
+          ) {
+            const profile = profileData.profile;
+
+            currentUser = {
+              ...currentUser,
+              name: `${profile.firstName} ${profile.lastName}`.trim(),
+            };
+          }
+        }
+
+        if (currentUser) {
+          setUser(currentUser);
+        }
+      } catch (error) {
+        console.error(
+          "Failed to load current user:",
+          error
+        );
+      }
+    };
+
+    loadCurrentUser();
+
+    const handleProfileUpdated = (
+      event: Event
+    ) => {
+      const customEvent =
+        event as CustomEvent<{
+          firstName: string;
+          lastName: string;
+        }>;
+
+      const firstName =
+        customEvent.detail?.firstName ?? "";
+
+      const lastName =
+        customEvent.detail?.lastName ?? "";
+
+      const updatedName =
+        `${firstName} ${lastName}`.trim();
+
+      if (!updatedName) {
+        return;
+      }
+
+      setUser((previous) =>
+        previous
+          ? {
+              ...previous,
+              name: updatedName,
+            }
+          : previous
+      );
+    };
+
+    window.addEventListener(
+      "profile-updated",
+      handleProfileUpdated
+    );
+
+    return () => {
+      window.removeEventListener(
+        "profile-updated",
+        handleProfileUpdated
+      );
+    };
+  }, []);
+
+  const displayName =
+    user?.name ?? "Loading...";
+
+  const displayRole =
+    user?.role === "ADMIN"
+      ? "Admin"
+      : user?.role === "MANAGER"
+        ? "Manager"
+        : "Employee";
+
+  const initials =
+    user?.name
+      ?.trim()
+      .split(/\s+/)
+      .map((part: string) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() ?? "U";
+
   return (
     <header className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
       {/* Left Section */}
@@ -76,16 +204,16 @@ export default function Topbar({
           className="flex items-center gap-2 rounded-lg p-1.5 transition hover:bg-slate-50"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-[#0B63F6]">
-            JD
+            {initials}
           </div>
 
           <div className="hidden text-left md:block">
             <p className="text-sm font-semibold text-slate-800">
-              John Doe
+              {displayName}
             </p>
 
             <p className="text-xs text-slate-500">
-              Employee
+              {displayRole}
             </p>
           </div>
 
